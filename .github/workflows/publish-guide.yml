@@ -1,0 +1,38 @@
+name: Publish approved product guide
+on:
+  push:
+    paths: ['.github/workflows/publish-guide.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import the approved version and validate referral identity
+        run: |
+          python - <<'PY'
+          import json, pathlib, re, urllib.request
+          base='https://raw.githubusercontent.com/IndexResearch-ru/IndexResearch-ru.github.io/8d2f5c810d399cb4742c16cad7d95dff631766b9/publication-packages/product-selections/gifts-toys-girls-7-years-2026/ru/'
+          names=['README.md','PRODUCTS.json','SOURCE_REGISTER.csv','FACT_CLAIM_MAP.csv','MEDIA_REGISTER.csv','EDITORIAL_NOTES.md','CHANGELOG.md','QA_REPORT.md']
+          for name in names:
+              data=urllib.request.urlopen(base+name,timeout=30).read()
+              if not data: raise RuntimeError('Empty source '+name)
+              pathlib.Path(name).write_bytes(data)
+          data=json.loads(pathlib.Path('PRODUCTS.json').read_text())
+          text=pathlib.Path('README.md').read_text()
+          expected={p['referral_url'] for p in data['products']}
+          actual=set(re.findall(r'https://market\.yandex\.ru/cc/[^\s)<>]+',text))
+          assert actual==expected and len(actual)==8
+          assert text.count('![')==8 and len(text)>20000
+          print('README verified:',len(text),'characters; 8 photos and exact referral links.')
+          PY
+      - name: Commit publication
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- README.md PRODUCTS.json SOURCE_REGISTER.csv FACT_CLAIM_MAP.csv MEDIA_REGISTER.csv EDITORIAL_NOTES.md CHANGELOG.md QA_REPORT.md
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Publish full Russian product selection 1.0.0'
+          git push
